@@ -8,7 +8,7 @@ use ratatui::layout::{Constraint, Layout, Rect, Alignment};
 use ratatui::text::{Line, Span};
 use sysinfo::{MINIMUM_CPU_UPDATE_INTERVAL, System, Disks};
 
-use crate::sysmot::push_history;
+use crate::sysmot::{level_color, percent, push_history};
 
 const MUTED: Color = Color::DarkGray;
 const ACCENT: Color = Color::Cyan;
@@ -156,7 +156,7 @@ impl App {
 
         self.header_panel(frame, header, "System Terminal");
         self.cpu_panel(frame, cpu);
-        frame.render_widget(panel("Memory"), memory);
+        frame.render_widget(panel("Pomodoro"), memory);
         frame.render_widget(panel("To do List"), todo);
         frame.render_widget(panel("Notes"), notes);
         self.footer_panel(frame, footer);
@@ -214,13 +214,13 @@ impl App {
 
         //cpu
         let cpu_usage = self.system.global_cpu_usage();
-        let cpu_percent = cpu_usage.round() as u16;
+        let cpu_percent = cpu_usage.round()as f64;
         
         let cpu_gauge = Gauge::default()
                                 .block(Block::bordered().title(" CPU Usage "))
-                                .gauge_style(Style::default().fg(Color::Red).bg(bar_background))
-                                .percent(cpu_percent)
-                                .label(format!("{:.1}%", cpu_usage));
+                                .gauge_style(Style::default().fg(level_color(cpu_percent)).bg(bar_background))
+                                .label(format!("{:.1}%", cpu_usage))
+                                .percent(cpu_percent as u16);
 
         //ram
         let ram_usage = self.system.used_memory();
@@ -234,7 +234,7 @@ impl App {
 
         let ram_gauge = Gauge::default()
                                 .block(Block::bordered().title(" RAM Usage "))
-                                .gauge_style(Style::default().fg(Color::Green).bg(bar_background))
+                                .gauge_style(Style::default().fg(level_color(percent(ram_usage, ram_total))).bg(bar_background))
                                 .percent(ram_percent)
                                 .label(format!("{}%", ram_percent));
 

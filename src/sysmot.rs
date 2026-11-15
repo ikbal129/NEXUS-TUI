@@ -42,6 +42,7 @@ impl App {
         
         let core_rows = self.system.cpus().len().div_ceil(2) as u16;
         let inner = block.inner(area);
+        frame.render_widget(block, area);
 
         let [cores_area, spark_area] = Layout::vertical([
             Constraint::Length(core_rows),
@@ -65,7 +66,7 @@ impl App {
             let gauge = LineGauge::default()
                 .ratio((usage / 100.0).clamp(0.0, 1.0))
                 .label(format!("{usage:>3.0}%"))
-                .filled_symbol("#")
+                .filled_symbol("█")
                 .unfilled_symbol(" ")
                 .filled_style(level_color(usage))
                 .unfilled_style(MUTED);
@@ -73,37 +74,49 @@ impl App {
             frame.render_widget(gauge, row);
         }
 
-        let width = spark_area.width as usize;
-        let skip = self.cpu_history.len().saturating_sub(width);
+        // let width = spark_area.width as usize;
+        // let skip = self.cpu_history.len().saturating_sub(width);
 
-        let data: Vec<u64> = self.cpu_history
-            .iter()
-            .skip(skip)
-            .map(|v| *v as u64)
-            .collect();
+        // let data: Vec<u64> = self.cpu_history
+        //     .iter()
+        //     .skip(skip)
+        //     .map(|v| *v as u64)
+        //     .collect();
 
-        let sparkline = Sparkline::default().data(&data).max(100).style(ACCENT);
-        frame.render_widget(sparkline, spark_area);
+        // let sparkline = Sparkline::default().data(&data).max(100).style(ACCENT);
+        // frame.render_widget(sparkline, spark_area);
         }
 
     fn render_memory(&mut self, frame: &mut Frame, area: Rect) {
-        let gb = |bytes: u64| bytes as f64 / 1024.0 / 1024.0 / 1024.0;
         let sys = &self.system;
+        let block = panel("Memory");
+        let memory_area = block.inner(area);
+        frame.render_widget(block, area);
 
-        let lines = vec![
-            Line::from(format!(
-                "RAM {:.1}/{:.1} GB",
-                gb(sys.used_memory()),
-                gb(sys.total_memory())
-            )),
-            Line::from(format!(
-                "Swap {:.1}/{:.1} GB",
-                gb(sys.used_swap()),
-                gb(sys.total_swap())
-            ))
-        ];
+        let [memory, swap, disk] = Layout::vertical([
+            Constraint::Percentage(33),
+            Constraint::Percentage(34),
+            Constraint::Percentage(33)
+        ]).spacing(2).areas(memory_area);
 
-        frame.render_widget(Paragraph::new(lines).block(panel("Memory")), area);
+        let ram = used_gauge("RAM", sys.used_memory(), sys.total_memory());
+        let swap_gauge = used_gauge("Swap", sys.used_swap(),sys.total_swap());
+
+        let mut total_disk: u64 = 0;
+        let mut available_disk: u64 = 0;
+
+        for disk in &self.disks {
+            total_disk += disk.total_space();
+            available_disk += disk.available_space();
+        }
+
+        let used_space = total_disk - available_disk;
+
+        let disk_gauge = used_gauge("Disks", used_space, total_disk);
+
+        frame.render_widget(ram, memory);
+        frame.render_widget(swap_gauge, swap);
+        frame.render_widget(disk_gauge, disk);
     }
 }
 
@@ -132,7 +145,7 @@ pub fn used_gauge(name: &str, used: u64, total: u64) -> Gauge<'static> {
     Gauge::default()
         .ratio(pct / 100.0)
         .label(format!(
-            "{name} {:.1} / {:.1} GB ({pct:.0})",
+            "{name} {:.1} / {:.1} GB ({pct:.0}%)",
             gb(used),
             gb(total)
         ))
