@@ -1,12 +1,13 @@
-use std::{collections::VecDeque, num::NonZeroU64};
+use std::{collections::VecDeque};
 
 use ratatui::{
     Frame, layout::{Constraint, Layout, Rect}, style::{Style, Stylize, Color}, text::{Line, Span},
-    widgets::{Block, BorderType, Paragraph, Gauge, LineGauge, Sparkline}
+    widgets::{Block, BorderType, Paragraph, Gauge, LineGauge, Sparkline, Axis, Chart, Dataset, GraphType}
 };
-use sysinfo::Cpu;
+// use sysinfo::Cpu;
+use ratatui::symbols::Marker;
 
-use crate::{ACCENT, App, HISTORY_LEN, MUTED, TITLE};
+use crate::{ACCENT, App, HISTORY_LEN, MUTED, RAM_COLOR};
 use crate::panel;
 
 impl App {
@@ -14,7 +15,7 @@ impl App {
         let core_rows = self.system.cpus().len().div_ceil(2) as u16;
         let top_height = (core_rows + 3).max(5) + 2;
 
-        let [header, top, processes, history, footer] = Layout::vertical([
+        let [header, top, history, processes, footer] = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(top_height),
             Constraint::Length(30),
@@ -31,8 +32,8 @@ impl App {
         self.header_panel(frame, header, "System Monitoring");
         self.render_cpu(frame, cpu);
         self.render_memory(frame, memory);
+        self.render_history(frame, history);
         frame.render_widget(panel("Processes"), processes);
-        frame.render_widget(panel("History"), history);
         self.footer_panel(frame, footer);
     }
 
@@ -69,22 +70,22 @@ impl App {
                 .filled_symbol("█")
                 .unfilled_symbol(" ")
                 .filled_style(level_color(usage))
-                .unfilled_style(MUTED);
+                .unfilled_style(Style::new().bg(MUTED));
 
             frame.render_widget(gauge, row);
         }
 
-        // let width = spark_area.width as usize;
-        // let skip = self.cpu_history.len().saturating_sub(width);
+        let width = spark_area.width as usize;
+        let skip = self.cpu_history.len().saturating_sub(width);
 
-        // let data: Vec<u64> = self.cpu_history
-        //     .iter()
-        //     .skip(skip)
-        //     .map(|v| *v as u64)
-        //     .collect();
+        let data: Vec<u64> = self.cpu_history
+            .iter()
+            .skip(skip)
+            .map(|v| *v as u64)
+            .collect();
 
-        // let sparkline = Sparkline::default().data(&data).max(100).style(ACCENT);
-        // frame.render_widget(sparkline, spark_area);
+        let sparkline = Sparkline::default().data(&data).max(100).style(ACCENT);
+        frame.render_widget(sparkline, spark_area);
         }
 
     fn render_memory(&mut self, frame: &mut Frame, area: Rect) {
@@ -117,6 +118,47 @@ impl App {
         frame.render_widget(ram, memory);
         frame.render_widget(swap_gauge, swap);
         frame.render_widget(disk_gauge, disk);
+    }
+
+    fn render_history(&self, frame: &mut Frame, area: Rect) {
+        let cpu_points = to_points(&self.cpu_history_sys);
+        let ram_points = to_points(&self.ram_history);
+
+        let dataset = vec![
+            Dataset::default()
+                .name("cpu")
+                .marker(Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(ACCENT)
+                .data(&cpu_points),
+            Dataset::default()
+                .name("ram")
+                .marker(Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(RAM_COLOR)
+                .data(&ram_points),
+        ];
+
+        let x_axis = Axis::default()
+            .bounds([0.0, (HISTORY_LEN - 1) as f64])
+            .labels(["60s ago", "30s", "now"])
+            .style(MUTED);
+
+        let y_axis = Axis::default()
+            .bounds([0.0, 100.0])
+            .labels(["0%", "50%", "100%"])
+            .style(MUTED);
+
+        let legend = Line::from(vec!["cpu".fg(ACCENT), "ram".fg(RAM_COLOR)]).right_aligned();
+        let block = panel("History 60s").title_top(legend);
+
+        let chart = Chart::new(dataset)
+            .block(block)
+            .x_axis(x_axis)
+            .y_axis(y_axis)
+            .legend_position(None);
+
+        frame.render_widget(chart, area);
     }
 }
 
@@ -159,4 +201,12 @@ pub fn push_history(history: &mut VecDeque<f64>, value: f64) {
     if history.len() > HISTORY_LEN {
         history.pop_front();
     }
+}
+
+pub fn to_points(history: &VecDeque<f64>) -> Vec<(f64, f64)> {
+    let offset = HISTORY_LEN - history.len();
+    history.iter()
+        .enumerate()
+        .map(|(i, value)| ((offset + i) as f64, *value))
+        .collect()
 }

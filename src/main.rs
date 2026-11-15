@@ -12,7 +12,7 @@ use crate::sysmot::{level_color, percent, push_history};
 
 const MUTED: Color = Color::DarkGray;
 const ACCENT: Color = Color::Cyan;
-const TITLE: &str = "N.E.X.U.S";
+const RAM_COLOR: Color = Color::Magenta;
 const HISTORY_LEN: usize = 120;
 
 enum Menu {
@@ -34,7 +34,8 @@ struct App {
     input_buffer: String,
     mode: Menu,
     disks: Disks,
-    cpu_history_sys: VecDeque<f64>
+    cpu_history_sys: VecDeque<f64>,
+    ram_history: VecDeque<f64>
 }
 
 fn main() -> std::io::Result<()>{
@@ -52,14 +53,15 @@ impl App {
         let mut app =  Self {
             running: true,
             system,
-            host_name: System::host_name().unwrap_or_else(|err| "unknown".into()),
+            host_name: System::host_name().unwrap_or_else(|_err| "unknown".into()),
             cpu_history,
-            os_name: System::name().unwrap_or_else(|err| "unknown os".into()),
+            os_name: System::name().unwrap_or_else(|_err| "unknown os".into()),
             is_input: false,
             input_buffer: "".to_string(),
             mode: Menu::MainMenu,
             disks: Disks::new_with_refreshed_list().unwrap(),
-            cpu_history_sys: VecDeque::with_capacity(HISTORY_LEN)
+            cpu_history_sys: VecDeque::with_capacity(HISTORY_LEN),
+            ram_history: VecDeque::with_capacity(HISTORY_LEN)
         };
         app.on_tick();
         app
@@ -128,6 +130,8 @@ impl App {
         self.system.refresh_memory();
         self.disks.refresh(true);
         push_history(&mut self.cpu_history_sys, self.system.global_cpu_usage() as f64);
+        let ram = percent(self.system.used_memory(), self.system.total_memory());
+        push_history(&mut self.ram_history, ram);
         let cpu_val = self.system.global_cpu_usage().round() as u64;
         self.cpu_history.push(cpu_val);
 
